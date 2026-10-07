@@ -1,1 +1,7 @@
-https://claude.ai/artifact/XEXjQPX5BEAk4RNpH2SnmE
+git init pitch-tracker && cd pitch-tracker
+# put index.html in this folder, then:
+git add index.html
+git commit -m "Pitch tracker"
+git branch -M main
+git remote add origin https://github.com/YOUR-USERNAME/pitch-tracker.git
+git push -u origin main
