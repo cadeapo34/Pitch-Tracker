@@ -1,7 +1,203 @@
-git init pitch-tracker && cd pitch-tracker
-# put index.html in this folder, then:
-git add index.html
-git commit -m "Pitch tracker"
-git branch -M main
-git remote add origin https://github.com/YOUR-USERNAME/pitch-tracker.git
-git push -u origin main
+const KEY='pitchtracker.v1',KEY2='pitchtracker.v2';
+let st={team:'',date:'',ars:['FB','CH','CB','SL','CT','SI'].map((n,i)=>({id:i+1,n})),nid:7,pre:{},arch:[],hand:{},b:[[]],cur:0,bat:[1],lu:Array(9).fill(''),jn:Array(9).fill('')};
+const cl=o=>JSON.parse(JSON.stringify(o));
+const mk=()=>({team:'',date:new Date().toLocaleDateString('en-CA'),b:[[]],bat:[1],cur:0,lu:Array(9).fill(''),jn:Array(9).fill(''),ars:cl(lib.ars),nid:lib.nid,pit:[{id:1,n:'',j:''}],pcur:1,pid:2,arch:[],hand:{}});
+let lib=null,curG=null,flt=0;
+try{lib=JSON.parse(localStorage.getItem(KEY2))}catch(e){}
+if(!lib||!lib.folders){lib={folders:[{id:1,n:'My Games'}],games:[],ars:st.ars,nid:st.nid,fid:2,gid:1};
+ try{const o=JSON.parse(localStorage.getItem(KEY)||'null');if(o&&o.b){if(o.names&&!o.ars){o.ars=o.names.map((n,i)=>({id:i+1,n}));o.nid=o.names.length+1}
+  if(o.ars){lib.ars=o.ars;lib.nid=o.nid||o.ars.length+1}
+  lib.games.push({id:1,f:1,n:'Game 1',d:Object.assign(mk(),{team:o.team||'',date:o.date||'',b:o.b,bat:o.bat||null,lu:o.lu||Array(9).fill(''),jn:o.jn||Array(9).fill('')})});lib.gid=2}}catch(e){}}
+st.ars=lib.ars;st.nid=lib.nid;
+let canStore=true;try{localStorage.setItem('_t','1');localStorage.removeItem('_t')}catch(e){canStore=false}
+document.getElementById('nostore').hidden=canStore;
+function normalize(){if(!st.bat)st.bat=st.b.map((_,i)=>i%9+1);const k=st.b.map((x,i)=>x.length?i:-1).filter(i=>i>=0);st.bat=k.map(i=>st.bat[i]);st.b=k.map(i=>st.b[i]);if(!st.b.length){st.b=[[]];st.bat=[1]}st.cur=st.b.length-1}
+const lab=n=>n>9?(a=>a?'Batter '+a.slot+' (previous)'+(a.j?' · #'+a.j:'')+(a.n?' '+a.n:''):'Batter')(st.arch.find(x=>x.id===n)):'Batter '+n+(st.jn[n-1]?' · #'+st.jn[n-1]:'')+(st.lu[n-1]?' '+st.lu[n-1]:'');
+const handOf=id=>(st.hand&&st.hand[id])||'R';
+const bl=i=>lab(st.bat[i]);
+const plab=id=>{const i=st.pit.findIndex(x=>x.id===id);const x=st.pit[i];return x?(x.j?'#'+x.j+' ':'')+(x.n||'Pitcher '+(i+1)):'?'};
+const pcnt=id=>st.b.reduce((n,a)=>n+a.filter(p=>(p.pi||1)===id).length,0);
+const nm=id=>{const a=st.ars.find(a=>a.id===id);return a?a.n:'?'};
+let sel={t:1,z:null,m:'',s:'',r:'',h:'',c:false,f:false};
+const HL={G:'GB',L:'LD',F:'FLY'},HN={G:'Ground ball',L:'Line drive',F:'Fly ball'},HC={G:'#b8741a',L:'#c0392b',F:'#2c6fbb'};
+const $=id=>document.getElementById(id);
+function save(){try{if(curG)Object.assign(curG.d,{team:st.team,date:st.date,b:st.b,bat:st.bat,cur:st.cur,lu:st.lu,jn:st.jn,ars:st.ars,nid:st.nid,pit:st.pit,pcur:st.pcur,pid:st.pid,pre:st.pre,arch:st.arch,hand:st.hand});
+ try{const dn=st.b.filter(a=>tally(a).end).length;if(dn>=2){const sig='v4|'+st.b.map(a=>a.map(p=>[p.t,p.z,p.m,p.s,p.r,p.h,p.f,p.pi].join('')).join(',')).join('|');if(!curG.d.doc||curG.d.doc.sig!==sig)curG.d.doc={sig,n:dn,ts:Date.now(),sections:buildSummary()}}else curG.d.doc=null}catch(e){}localStorage.setItem(KEY2,JSON.stringify(lib))}catch(e){}}
+function arm(b,fn,txt){const o=b.textContent;b.onclick=()=>{if(b.dataset.a){fn();return}b.dataset.a=1;b.textContent=txt||'Sure?';b.classList.add('on');setTimeout(()=>{delete b.dataset.a;b.textContent=o;b.classList.remove('on')},3000)}}
+const esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+function btns(el,items,key,toggle){el.innerHTML='';items.forEach(it=>{const v=it[0],lab=it[1];const b=document.createElement('button');b.textContent=lab;if(key==='r')b.dataset.r=v;if(sel[key]===v)b.className='on';b.onclick=()=>{sel[key]=(toggle&&sel[key]===v)?(key==='z'?null:''):v;if(sel.r!=='X'&&sel.r!=='H')sel.h='';if(sel[key]===v)flashKey(key,v,b);drawEntry()};el.appendChild(b)})}
+function pitches(){return st.b[st.cur]}
+function tally(ps){let b=0,s=0,end='';for(const p of ps){if(p.r==='B'){b++;if(b>=4){end='Walk';break}}else if(p.r==='S'||p.r==='T'){if(s>=2){end='Strikeout';break}s++}else if(p.r==='F'){if(s<2)s++}else if(p.r==='X'||p.r==='H'||p.r==='N'){end='In play';break}else if(p.r==='P'){end='HBP';break}}return{b:Math.min(b,3),s:Math.min(s,2),end}}
+function drawEntry(){
+ if(!st.ars.some(a=>a.id===sel.t))sel.t=st.ars.length?st.ars[0].id:0;
+ btns($('types'),st.ars.map(a=>[a.id,a.n||'?']),'t');
+ {const R=handOf(st.bat[st.cur])==='R';$('zwrap').className=R?'zl':'zr';btns($('mod'),(R?['I','O','U','D']:['U','D','O','I']).map(x=>[x,x]),'m',true);btns($('zone'),[[3,'3'],[4,'4'],[1,'1'],[2,'2']],'z',true);$('hand').textContent='Bats: '+(R?'R':'L')}
+ {const sw=$('swing');sw.innerHTML='';[['C','C'],['E','E'],['X','X'],['L','L']].forEach(([v,l])=>{const b=document.createElement('button');b.textContent=l;const on=v==='C'?sel.c:sel.s===v;if(on)b.className='on';b.onclick=()=>{if(v==='C')sel.c=!sel.c;else sel.s=sel.s===v?'':v;if(v==='C'?sel.c:sel.s===v)flashKey('s',v,b);drawEntry()};sw.appendChild(b)})}
+ btns($('res'),[['S','S'],['T','T'],['B','b'],['X','O'],['H','H'],['F','F'],['N','B']],'r',true);
+ $('psel').innerHTML=st.pit.map(x=>`<option value="${x.id}"${x.id===st.pcur?' selected':''}>${esc(plab(x.id))} (${pcnt(x.id)})</option>`).join('');
+ {const tot=st.b.reduce((n,a)=>n+a.length,0),cp=pcnt(st.pcur);$('pcpill').textContent='P '+cp}
+ $('hwrap').style.display=(sel.r==='X'||sel.r==='H')?'block':'none';
+ btns($('ht'),[['G','Ground ball'],['L','Line drive'],['F','Fly ball']],'h',true);
+ const ps=pitches(),t=tally(ps);
+ $('add').disabled=!sel.r||((sel.r==='X'||sel.r==='H')&&!sel.h)||(!editing&&!!t.end);
+ $('fool').textContent=sel.f?'Fooled ✓':'Fooled';$('fool').className=sel.f?'on':'';
+ $('add').textContent=editing?'Save changes':'Add pitch';
+ $('ebar').hidden=!editing;if(editing)$('etx').textContent='Editing At-bat '+(editing.ai+1)+' · pitch '+(editing.k+1);
+ $('nab').disabled=!!editing;
+ $('count').textContent=t.b+'-'+t.s;
+ $('pnum').textContent='At-bat '+(st.cur+1)+' · '+bl(st.cur)+' · Pitch #'+(ps.length+1);
+ $('strip').innerHTML='';for(let n=1;n<=9;n++){const b=document.createElement('button');b.textContent=n;b.style.padding='9px 0';if(st.bat[st.cur]===n)b.className='on';b.onclick=()=>{st.bat[st.cur]=n;save();render()};$('strip').appendChild(b)}
+ $('undo').disabled=!!editing||(!ps.length&&st.cur===0);
+}
+function pend(ps){for(let i=ps.length-1;i>=0;i--){if((ps[i].r==='X'||ps[i].r==='H'||ps[i].r==='N')&&ps[i].sx==null)return i}return -1}
+function fieldSvg(ai){
+ const ps=st.b[ai];let ctr='';{const t=tally(ps);if(t.end){const l=ps[ps.length-1];let txt='',back=false;if(t.end==='Walk')txt='BB';else if(t.end==='HBP')txt='HBP';else if(t.end==='Strikeout'){txt='K';back=l.r==='T'}else txt=l.r==='H'?'H':l.r==='N'?'B':'O';const fs=txt.length>2?30:46;ctr=`<text transform="translate(150 ${186+fs*0.35})${back?' scale(-1 1)':''}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="var(--ink)" opacity=".3">${txt}</text>`}}let m='';
+ let ln='',mk='';ps.forEach((p,i)=>{if(p.sx==null)return;const x=p.sx,y=p.sy;if(p.h){const d=Math.hypot(x-150,y-232);const ds=p.h==='G'?' stroke-dasharray="5 4"':'';ln+=p.h==='F'?`<path d="M150 232 Q${(150+x)/2} ${(232+y)/2-d*0.4} ${x} ${y}" fill="none" stroke="var(--ink)" stroke-width="2"/>`:`<line x1="150" y1="232" x2="${x}" y2="${y}" stroke="var(--ink)" stroke-width="2"${ds}/>`}mk+=`<circle cx="${x}" cy="${y}" r="9" fill="var(--card)" stroke="var(--ink)" stroke-width="1.5"/><text x="${x}" y="${y+4}" text-anchor="middle" font-size="${ai+1>9?9:11}" fill="var(--ink)" font-weight="700">${ai+1}</text>`});m=ln+mk;if(st.pre&&st.pre[ai]&&!ps.some(p=>p.sx!=null)){const q=st.pre[ai];m+=`<circle cx="${q.x}" cy="${q.y}" r="9" fill="var(--card)" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="3 3"/><text x="${q.x}" y="${q.y+4}" text-anchor="middle" font-size="${ai+1>9?9:11}" fill="var(--ink)" font-weight="700">${ai+1}</text>`}
+ return `<svg viewBox="0 0 300 250"><g fill="none" stroke="var(--ink)" stroke-width="1.3"><path d="M150 235 L16 101 A190 190 0 0 1 284 101 Z" fill="var(--bg)"/><path d="M150 228 L193 185 L150 142 L107 185 Z"/><circle cx="150" cy="232" r="9"/></g>${ctr}<rect class="hit" data-ai="${ai}" x="0" y="0" width="300" height="250" fill="transparent"/>${m}</svg>`}
+function logTbl(ps,act,ai){
+ const n=Math.max(12,ps.length+(act?1:0));const ed=(k)=>editing&&editing.ai===ai&&editing.k===k;
+ const at=k=>k<ps.length?` data-ai="${ai}" data-k="${k}"`:'';
+ let h='<tr><th class="h"></th>';
+ for(let i=1;i<=n;i++){const q=ps[i-1],cl=((ed(i-1)?'ed ':'')+(q&&q.f?'fl':'')).trim();h+=`<th${at(i-1)}${cl?` class="${cl}"`:''}>${i}</th>`}h+='</tr>';
+ const rows=[['Pitch',p=>nm(p.t)+(p.z?'/'+p.z:'')+p.m],['E/L',p=>(p.s||'').replace('*','X').split('').join('/')],['Result',p=>({B:'b',N:'B',X:'O',P:'HBP'})[p.r]||p.r]];
+ rows.forEach((r,ri)=>{h+=`<tr><th class="h">${r[0]}</th>`;for(let i=0;i<n;i++){const p=ps[i];const cl=(act&&i===ps.length?'cur ':'')+(ed(i)?'ed ':'')+(p&&p.f?'fl':'');const c=cl?` class="${cl.trim()}"`:'';h+=p?`<td${c}${at(i)}><span class="${ri==2?(p.r==='B'?'B':p.r):''}">${r[1](p)}</span></td>`:`<td${c}></td>`}h+='</tr>'});
+ return `<div class="scroll"><table>${h}</table></div>`}
+let editing=null;
+function resetSel(){sel.z=null;sel.m='';sel.s='';sel.c=false;sel.r='';sel.h='';sel.f=false}
+function startEdit(ai,k){const p=st.b[ai][k];if(!p)return;editing={ai,k};sel.t=p.t;sel.z=p.z||null;sel.m=p.m||'';sel.c=(p.s||'').includes('C');sel.s=(p.s||'').replace('C','').replace('*','X');sel.r=p.r;sel.h=p.h||'';sel.f=!!p.f;render();$('entry').scrollIntoView({behavior:'smooth',block:'start'})}
+function saveEdit(){const p=st.b[editing.ai][editing.k],was=editing.ai;Object.assign(p,{f:sel.f?1:0,t:sel.t,z:sel.z,m:sel.m,s:(sel.c?'C':'')+sel.s,r:sel.r,h:(sel.r==='X'||sel.r==='H')?sel.h:sel.r==='N'?'G':''});if(sel.r!=='X'&&sel.r!=='H'&&sel.r!=='N'){delete p.sx;delete p.sy}editing=null;resetSel();if(was===st.cur&&tally(st.b[was]).end)newAB();save();render()}
+function delEdit(){const {ai,k}=editing;st.b[ai].splice(k,1);editing=null;resetSel();if(!st.b[ai].length&&ai<st.b.length-1){st.b.splice(ai,1);st.bat.splice(ai,1);st.pre={};if(ai<st.cur)st.cur--}save();render()}
+let view='b',btab=null,subSlot=null;
+const MEAN={r:{S:'Swinging strike',T:'Take (taken strike)',B:'Ball',X:'Ball in play',H:'Hit',F:'Foul',N:'Bunt'},s:{C:'Check swing',E:'Early',L:'Late',X:'On time','*':'On time'},m:{U:'Up',D:'Down',I:'Inside',O:'Outside'},z:{1:'Low left',2:'Low right',3:'High left',4:'High right'},h:{G:'Ground ball',L:'Line drive',F:'Fly ball'}};
+function flash(t,el){const e=$('toast');e.textContent=t;if(el){const r=el.getBoundingClientRect(),w=Math.max(80,t.length*9+34),x=Math.min(Math.max(r.left+r.width/2,w/2+8),innerWidth-w/2-8);e.style.left=x+'px';e.style.top=(r.top>52?r.top-42:r.bottom+6)+'px'}e.className='show';clearTimeout(flash.t);flash.t=setTimeout(()=>{e.className=''},1100)}
+function flashKey(k,v,el){const m=MEAN[k];if(m&&m[v])flash(m[v],el)}
+function tl(k){if(k<=9)return k;const a=st.arch.find(x=>x.id===k);const i=st.arch.filter(x=>x.slot===a.slot).indexOf(a);return a.slot+String.fromCharCode(97+i)}
+function abStat(k){let h=0,ab=0;st.b.forEach((a,i)=>{if(st.bat[i]!==k||!a.length)return;const t=tally(a);if(!t.end||t.end==='Walk'||t.end==='HBP')return;ab++;if(a[a.length-1].r==='H')h++});return{h,ab,pct:ab?h/ab*100:null}}
+const pf=x=>x.pct==null?'–':(x.pct===100?'100':x.pct.toFixed(1));
+function drawABs(){
+ const card=i=>{const ps=st.b[i],t=tally(ps),act=i===st.cur,pd=pend(ps);return `<div class="card ab${act?' act':''}"><div class="row" style="justify-content:space-between;margin-bottom:6px"><b>At-bat ${i+1} · ${bl(i).replace(/</g,'&lt;')}</b><span class="bdg">${t.end==='In play'&&ps[ps.length-1].r==='N'?'In play · Bunt':t.end==='In play'&&ps[ps.length-1].r==='H'&&ps[ps.length-1].h?'Hit · '+HN[ps[ps.length-1].h]:t.end==='In play'&&ps[ps.length-1].h?'In play · '+HN[ps[ps.length-1].h]:t.end||(act?'Now batting':'')}</span><button data-del="${i}" aria-label="Delete at-bat">✕</button></div><div class="hint pl" style="margin-bottom:6px"><b>Pitcher:</b> ${esc((()=>{const u=[];ps.forEach(p=>{const q=p.pi||1;if(!u.includes(q))u.push(q)});if(!u.length)u.push(st.pcur);return u.map(plab).join(' → ')})())}</div>${logTbl(ps,act,i)}${fieldSvg(i)}<div class="hint"><svg style="display:inline-block;width:150px;height:14px;vertical-align:middle" viewBox="0 0 150 14"><g stroke="var(--ink)" stroke-width="2" fill="none"><line x1="0" y1="7" x2="26" y2="7" stroke-dasharray="5 4"/><line x1="58" y1="7" x2="84" y2="7"/><path d="M116 12 Q130 -6 148 12"/></g></svg><span class="hint"> Ground · Line · Fly</span> Tap the chart to place or move the hit (one line per chart).</div></div>`};
+ let h='';
+ if(view==='b'){const n=btab||st.bat[st.cur],cnt=k=>st.b.filter((a,i)=>st.bat[i]===k&&a.length).length,idx=[];st.bat.forEach((x,i)=>{if(x===n)idx.push(i)});
+  h=`<div class="grid" id="btabs" style="grid-template-columns:repeat(9,1fr);margin-bottom:8px">`+[1,2,3,4,5,6,7,8,9].concat(st.arch.map(a=>a.id)).map(k=>`<button data-bt="${k}" class="${k===n?'on':''}${k===st.bat[st.cur]?' now':''}" style="padding:6px 0;line-height:1.15">${tl(k)}<br><small>${pf(abStat(k))}</small></button>`).join('')+`</div><div class="hint" style="margin-bottom:6px"><b>${esc(lab(n))}</b> · ${abStat(n).h}-for-${abStat(n).ab} (${pf(abStat(n))}) · ${cnt(n)} at-bat${cnt(n)===1?'':'s'}</div>`+(idx.length?idx.map(card).join(''):'<div class="card hint">No at-bats yet.</div>')}
+ else{for(let i=st.b.length-1;i>=0;i--){if(flt&&st.bat[i]!==flt)continue;h+=card(i)}}
+ $('abs').innerHTML=h;
+ document.querySelectorAll('[data-bt]').forEach(el=>el.onclick=()=>{btab=+el.dataset.bt;drawABs()});
+ document.querySelectorAll('#abs [data-k]').forEach(el=>el.onclick=()=>startEdit(+el.dataset.ai,+el.dataset.k));
+ document.querySelectorAll('.hit').forEach(el=>el.onclick=e=>{const ai=+el.dataset.ai,ps=st.b[ai],r=el.getBoundingClientRect(),k=300/r.width,x=Math.round((e.clientX-r.left)*k),y=Math.round((e.clientY-r.top)*k);let i=-1;ps.forEach((p,j)=>{if(p.r==='X'||p.r==='H'||p.r==='N')i=j});ps.forEach(p=>{delete p.sx;delete p.sy});if(i>=0){ps[i].sx=x;ps[i].sy=y}else{st.pre=st.pre||{};st.pre[ai]={x,y}}save();render()});
+ document.querySelectorAll('#abs [data-del]').forEach(el=>arm(el,()=>{const i=+el.dataset.del;st.b.splice(i,1);st.bat.splice(i,1);st.pre={};if(!st.b.length){st.b=[[]];st.bat=[1]}st.cur=st.b.length-1;save();render()}));
+}
+function doSub(i,j,n){const slot=i+1;const mine=st.bat.map((sv,k)=>sv===slot&&k!==st.cur&&st.b[k].length?k:-1).filter(k=>k>=0);
+ if(mine.length){const id=st.arch.reduce((m,a)=>Math.max(m,a.id),9)+1;st.arch.push({id,slot,j:st.jn[i],n:st.lu[i]});st.hand=st.hand||{};st.hand[id]=handOf(slot);mine.forEach(k=>st.bat[k]=id)}
+ st.hand=st.hand||{};delete st.hand[slot];st.jn[i]=j;st.lu[i]=n;subSlot=null;save();drawLU();render()}
+function moveSlot(a,b){if(a===b)return;
+ const m=arr=>{const x=arr.splice(a,1)[0];arr.splice(b,0,x)};m(st.lu);m(st.jn);{st.hand=st.hand||{};const hh=[1,2,3,4,5,6,7,8,9].map(handOf);m(hh);hh.forEach((v,k)=>{st.hand[k+1]=v})}
+ st.bat=st.bat.map(sv=>{const i=sv-1;let n=i;if(i===a)n=b;else if(a<b&&i>a&&i<=b)n=i-1;else if(a>b&&i>=b&&i<a)n=i+1;return n+1});
+ save();drawLU();render()}
+function drawLU(){
+$('lu').innerHTML=st.lu.map((n,i)=>`<div class="row lrow" style="flex-wrap:nowrap;margin-bottom:6px"><b class="hd" data-hd="${i}">${i+1}</b><input class="nm lun" style="width:72px;flex:none" inputmode="numeric" maxlength="3" placeholder="Jersey #" value="${String(st.jn[i]).replace(/"/g,'&quot;')}" data-jn="${i}"><input class="nm lun" placeholder="Name" maxlength="14" value="${n.replace(/"/g,'&quot;')}" data-lu="${i}"><button data-sub="${i}">Sub</button></div>${subSlot===i?`<div class="row" style="margin:-2px 0 8px 36px"><input class="nm lun" id="sj" style="width:72px;flex:none" inputmode="numeric" maxlength="3" placeholder="Jersey #"><input class="nm lun" id="sn" placeholder="New batter name" maxlength="14"><button id="sgo">Sub in</button><button id="scan">Cancel</button></div>`:''}`).join('');
+document.querySelectorAll('[data-lu]').forEach(el=>el.oninput=e=>{st.lu[+e.target.dataset.lu]=e.target.value;save();render()});
+document.querySelectorAll('[data-jn]').forEach(el=>el.oninput=e=>{st.jn[+e.target.dataset.jn]=e.target.value.replace(/\D/g,'');save();render()});
+
+ document.querySelectorAll('[data-sub]').forEach(el=>el.onclick=()=>{subSlot=+el.dataset.sub;drawLU();if($('sn'))$('sn').focus()});
+ if($('sgo')){$('sgo').onclick=()=>doSub(subSlot,$('sj').value.replace(/\D/g,''),$('sn').value.trim());$('scan').onclick=()=>{subSlot=null;drawLU()}}
+ document.querySelectorAll('.hd').forEach(h=>{h.onpointerdown=e=>{const a=+h.dataset.hd,rows=[...document.querySelectorAll('.lrow')];let on=false,tgt=a;
+  const t=setTimeout(()=>{on=true;h.classList.add('rdy');rows[a].classList.add('drag');if(navigator.vibrate)navigator.vibrate(20)},350);
+  const mv=ev=>{if(!on)return;ev.preventDefault();rows.forEach((r,i)=>{const rc=r.getBoundingClientRect();if(ev.clientY>=rc.top&&ev.clientY<rc.bottom)tgt=i});rows.forEach((r,i)=>r.classList.toggle('tgt',i===tgt&&tgt!==a))};
+  const up=()=>{clearTimeout(t);document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',up);if(on)moveSlot(a,tgt);else rows.forEach(r=>r.classList.remove('drag','tgt'))};
+  document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',up)}});
+}
+function render(){$('sumb').hidden=!(curG&&curG.d.doc);drawEntry();drawABs()}
+function newAB(){btab=null;st.bat.push(st.bat[st.cur]%9+1);st.b.push([]);st.cur=st.b.length-1}
+$('add').onclick=()=>{if(!sel.r)return;if(editing){saveEdit();return}pitches().push({f:sel.f?1:0,pi:st.pcur,t:sel.t,z:sel.z,m:sel.m,s:(sel.c?'C':'')+sel.s,r:sel.r,h:(sel.r==='X'||sel.r==='H')?sel.h:sel.r==='N'?'G':''});sel.z=null;sel.m='';sel.s='';sel.c=false;sel.r='';sel.h='';sel.f=false;{const q=pitches(),lp=q[q.length-1];if(st.pre&&st.pre[st.cur]&&'XHN'.includes(lp.r)){lp.sx=st.pre[st.cur].x;lp.sy=st.pre[st.cur].y;delete st.pre[st.cur]}}if(tally(pitches()).end)newAB();save();render()};
+$('undo').onclick=()=>{if(!pitches().length&&st.cur>0){st.b.pop();st.bat.pop();st.pre={};st.cur=st.b.length-1}pitches().pop();save();render()};
+$('nab').onclick=()=>{if(editing)return;pitches().push({f:0,pi:st.pcur,t:sel.t,z:sel.z,m:sel.m,s:'',r:'P',h:''});flash('Hit by pitch',$('nab'));sel.z=null;sel.m='';sel.s='';sel.c=false;sel.r='';sel.h='';sel.f=false;if(st.pre)delete st.pre[st.cur];newAB();save();render()};
+$('hand').onclick=()=>{const id=st.bat[st.cur];st.hand=st.hand||{};st.hand[id]=handOf(id)==='R'?'L':'R';flash(st.hand[id]==='L'?'Left-handed':'Right-handed',$('hand'));save();render()};
+$('team').oninput=e=>{st.team=e.target.value;save()};$('date').oninput=e=>{st.date=e.target.value;save()};
+function drawNames(){
+ $('names').innerHTML=st.ars.map(a=>`<div class="row" style="margin-bottom:6px"><input class="nm" style="flex:1" maxlength="10" value="${a.n.replace(/"/g,'&quot;')}" data-id="${a.id}" placeholder="Name"><button data-del="${a.id}" aria-label="Remove">✕</button></div>`).join('');
+ document.querySelectorAll('.nm:not(.lun)').forEach(el=>el.oninput=e=>{st.ars.find(a=>a.id==e.target.dataset.id).n=e.target.value;save();drawEntry();drawABs()});
+ document.querySelectorAll('#names [data-del]').forEach(el=>arm(el,()=>{const id=+el.dataset.del;if(st.ars.length<2)return;st.ars=st.ars.filter(a=>a.id!==id);save();drawNames();render()}));
+}
+$('addt').onclick=()=>{st.ars.push({id:st.nid++,n:''});save();drawNames();render();const f=document.querySelectorAll('#names .nm');f[f.length-1].focus()};
+drawNames();
+function drawPit(){
+ $('plist').innerHTML=st.pit.map((x,i)=>`<div class="row" style="flex-wrap:nowrap;margin-bottom:6px"><b style="width:18px">${i+1}</b><input class="nm lun" style="width:72px;flex:none" inputmode="numeric" maxlength="3" placeholder="Jersey #" value="${esc(x.j)}" data-pj="${x.id}"><input class="nm lun" placeholder="Pitcher ${i+1}" maxlength="20" value="${esc(x.n)}" data-pn="${x.id}"></div>`).join('');
+ const f=id=>st.pit.find(x=>x.id==id);
+ document.querySelectorAll('[data-pj]').forEach(el=>el.oninput=()=>{f(el.dataset.pj).j=el.value.replace(/\D/g,'');save();drawEntry();drawABs()});
+ document.querySelectorAll('[data-pn]').forEach(el=>el.oninput=()=>{f(el.dataset.pn).n=el.value;save();drawEntry();drawABs()});
+}
+$('psel').onchange=e=>{st.pcur=+e.target.value;save();render()};
+$('pnew').onclick=()=>{$('pform').hidden=!$('pform').hidden;if(!$('pform').hidden)$('pn').focus()};
+$('pgo').onclick=()=>{st.pit.push({id:st.pid++,n:$('pn').value.trim(),j:$('pj').value.replace(/\D/g,'')});st.pcur=st.pid-1;$('pn').value='';$('pj').value='';$('pform').hidden=true;save();drawPit();render()};
+$('fool').onclick=()=>{sel.f=!sel.f;if(sel.f)flash('Fooled',$('fool'));if(editing){st.b[editing.ai][editing.k].f=sel.f?1:0;save()}render()};
+$('ecan').onclick=()=>{editing=null;resetSel();render()};
+arm($('edel'),()=>{if(editing)delEdit()},'Sure?');
+function buildSummary(){
+ const ps=[];st.b.forEach((a,ai)=>a.forEach(p=>ps.push(Object.assign({},p,{bt:st.bat[ai]}))));
+ const who=a=>{const m={};a.forEach(p=>m[p.bt]=(m[p.bt]||0)+1);const r=Object.keys(m).map(k=>lab(+k)+' ('+m[k]+')').join(', ');return r||'—'};
+ const bats=(arr,f)=>arr.filter(f).map(x=>lab(st.bat[st.b.indexOf(x.a)])).join(', ');
+ const pct=(a,b)=>b?Math.round(a/b*100):0,pl=(n,w)=>n+' '+w+(n===1?'':'s'),pp=n=>pl(n,'pitch').replace('pitchs','pitches');
+ const c=(a,r)=>a.filter(p=>r.includes(p.r)).length;
+ const stat=a=>({n:a.length,S:c(a,'S'),T:c(a,'T'),F:c(a,'F'),b:c(a,'B'),ip:c(a,'XHN'),h:c(a,'H'),f:a.filter(p=>p.f).length,ld:a.filter(p=>p.h==='L'&&(p.r==='H'||p.r==='X')).length});
+ const score=t=>pct(t.S+t.T+.5*t.F,t.n);
+ const grp=kf=>{const m={};ps.forEach(p=>{const k=kf(p);if(k==null||k==='')return;(m[k]=m[k]||[]).push(p)});return m};
+ const good=[],bad=[],T=stat(ps);
+ const mix=t=>[t.S?pl(t.S,'swinging strike'):'',t.T?pl(t.T,'take'):'',t.F?pl(t.F,'foul'):'',t.b?pl(t.b,'ball'):'',t.ip?t.ip+' in play':''].filter(Boolean).join(', ');
+ const judge=(lab,a)=>{if(a.length<3)return;const t=stat(a),sc=score(t),head=lab+': '+pp(t.n)+' ('+mix(t)+')';
+  const bd=[];if(t.b/t.n>=.5)bd.push(head+' — over half were balls. Balls to: '+who(a.filter(p=>p.r==='B'))+'.');
+  if(t.h>=1&&t.h/t.n>=.2)bd.push(lab+': '+pl(t.h,'hit')+' allowed on '+pp(t.n)+'. Hits by: '+who(a.filter(p=>p.r==='H'))+'.');
+  if(!bd.length&&(t.b+t.ip)/t.n>=.65)bd.push(head+' — few swinging strikes or takes. Poor outcomes vs: '+who(a.filter(p=>'BXHN'.includes(p.r)))+'.');
+  if(bd.length)bad.push(...bd);else if(sc>=45&&t.h===0)good.push(head+(t.f?', '+t.f+' fooled':'')+'; no hits allowed. Swinging strikes/takes vs: '+who(a.filter(p=>p.r==='S'||p.r==='T'))+'.')};
+ const tg=grp(p=>p.t);Object.keys(tg).forEach(k=>judge(nm(+k),tg[k]));
+ const Z={1:'low left',2:'low right',3:'high left',4:'high right'};
+ const zg=grp(p=>p.z);Object.keys(zg).forEach(k=>judge('Zone '+k+' ('+Z[k]+', catcher\'s view)',zg[k]));
+ const ends=st.b.map(a=>({a,t:tally(a)})).filter(x=>x.t.end);
+ const K=ends.filter(x=>x.t.end==='Strikeout').length,BB=ends.filter(x=>x.t.end==='Walk').length,H=ends.filter(x=>x.a[x.a.length-1].r==='H').length;
+ const fl=Object.keys(tg).map(k=>[k,tg[k].filter(p=>p.f).length]).filter(x=>x[1]);
+ if(T.f)good.push('Batters were fooled on '+pp(T.f)+(fl.length?' ('+fl.map(x=>nm(+x[0])+' '+x[1]).join(', ')+')':'')+'. Batters: '+who(ps.filter(p=>p.f))+'.');
+ if(K)good.push(pl(K,'strikeout')+': '+bats(ends,x=>x.t.end==='Strikeout')+'.');
+ const fp=st.b.filter(a=>a.length).map(a=>a[0]);
+ if(fp.length>=2){const g=fp.filter(p=>p.r==='S'||p.r==='T').length,fo=fp.filter(p=>p.r==='F').length,sc=pct(g+.5*fo,fp.length),txt='First pitch: '+g+' swinging strike/take'+(g===1?'':'s')+(fo?' plus '+pl(fo,'foul'):'')+' of '+fp.length+'.';
+  if(sc>=55)good.push(txt);else if(sc<40)bad.push(txt)}
+ const HB=ends.filter(x=>x.t.end==='HBP').length;if(HB)bad.push(HB+' hit by pitch: '+bats(ends,x=>x.t.end==='HBP')+'.');
+ if(BB)bad.push(pl(BB,'walk')+': '+bats(ends,x=>x.t.end==='Walk')+'.');
+ if(T.h)bad.push(pl(T.h,'hit')+' allowed. Hits by: '+who(ps.filter(p=>p.r==='H'))+'.');
+ if(T.ld>=2)bad.push(pl(T.ld,'line drive')+' allowed. Hit by: '+who(ps.filter(p=>p.h==='L'&&(p.r==='H'||p.r==='X')))+'.');
+ const none='Nothing stands out yet (a pitch type or zone needs at least 3 pitches).';
+ const secs=[{t:'Overview',c:'#2c6fbb',items:['Through '+pl(ends.length,'completed at-bat')+', '+pp(ps.length)+'.','Outcomes: '+(mix(T)||'none yet')+'.','Hits '+H+'-for-'+ends.filter(x=>x.t.end!=='Walk'&&x.t.end!=='HBP').length+' at-bats.','Ranking used: swinging strike and take are best, a foul is next, then a ball, a ball in play or a hit.']},
+  {t:'What has worked',c:'#1f7a3f',items:good.length?good:[none]},{t:'What has not worked',c:'#c0392b',items:bad.length?bad:[none]}];
+ if(st.pit.length>1){const pg=grp(p=>p.pi||1);secs.push({t:'By pitcher',c:'#8e44ad',items:Object.keys(pg).map(k=>{const t=stat(pg[k]);return plab(+k)+': '+pp(t.n)+' ('+mix(t)+'), '+pl(t.h,'hit')+' allowed.'})})}
+ secs.push({t:'At-bats',c:'#74726b',items:ends.map(x=>{const i=st.b.indexOf(x.a),l=x.a[x.a.length-1];return 'At-bat '+(i+1)+' · '+bl(i)+': '+(x.t.end==='Strikeout'?'Strikeout':x.t.end==='Walk'?'Walk':x.t.end==='HBP'?'Hit by pitch':l.r==='H'?'Hit':l.r==='N'?'Bunt':'Out in play')+' ('+pp(x.a.length)+')'})});
+ return secs}
+let docFrom='home';
+function showDoc(g,from){docFrom=from;const d=g.d.doc;if(!d)return;$('home').hidden=true;$('gv').hidden=true;$('dv').hidden=false;$('dtitle').textContent='Summary · '+g.n;
+ $('dbody').innerHTML='<div class="hint" style="margin-bottom:8px">Through '+d.n+' completed at-bats · updated '+new Date(d.ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})+'</div>'+d.sections.map(sc=>`<div class="card" style="border-left:5px solid ${sc.c}"><b>${esc(sc.t)}</b><ul style="margin:6px 0 0 18px;padding:0">${sc.items.map(i=>`<li style="margin-bottom:4px">${esc(i)}</li>`).join('')}</ul></div>`).join('');window.scrollTo(0,0)}
+$('sumb').onclick=()=>showDoc(curG,'game');
+$('dback').onclick=()=>{$('dv').hidden=true;if(docFrom==='game'&&curG)$('gv').hidden=false;else{$('home').hidden=false;drawHome()}window.scrollTo(0,0)};
+function openGame(id){editing=null;subSlot=null;btab=null;curG=lib.games.find(g=>g.id===id);const d=curG.d;
+ Object.assign(st,{team:d.team||'',date:d.date||'',b:d.b,bat:d.bat,lu:d.lu||Array(9).fill(''),jn:d.jn||Array(9).fill(''),ars:d.ars||cl(lib.ars),nid:d.nid||lib.nid,pit:d.pit||[{id:1,n:'',j:''}],pcur:d.pcur||1,pid:d.pid||2,pre:d.pre||{},arch:d.arch||[],hand:d.hand||{}});
+ normalize();drawNames();drawPit();flt=0;sel.r='';sel.h='';sel.z=null;sel.m='';sel.s='';sel.c=false;
+ $('team').value=st.team;$('date').value=st.date;$('gname').textContent=curG.n;
+ drawLU();render();if(tally(pitches()).end){newAB();save();render()}
+ $('home').hidden=true;$('gv').hidden=false;window.scrollTo(0,0)}
+function pc(g){return g.d.b.filter(a=>a.length).length}
+function drawHome(){
+ let h='';
+ lib.folders.forEach(f=>{const gs=lib.games.filter(g=>g.f===f.id);
+  h+=`<div class="card"><div class="row" style="flex-wrap:nowrap"><span>📁</span><input class="nm lun fn" data-f="${f.id}" value="${esc(f.n)}" maxlength="40"><button data-nf="${f.id}">+ Game</button><button data-df="${f.id}" aria-label="Delete folder">✕</button></div>`;
+  h+=gs.length?gs.map(g=>`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px"><input class="nm lun gn" data-g="${g.id}" value="${esc(g.n)}" maxlength="40"><div class="row" style="margin-top:6px"><span class="hint" style="flex:1;min-width:120px">${esc(g.d.team||'No team')} · ${esc(g.d.date||'no date')} · ${pc(g)} AB</span><select class="nm lun mv" data-g="${g.id}" style="width:auto">${lib.folders.map(o=>`<option value="${o.id}"${o.id===g.f?' selected':''}>${esc(o.n)}</option>`).join('')}</select><button class="big" style="flex:none" data-og="${g.id}">Open</button>${g.d.doc?`<button data-sg="${g.id}">Summary</button>`:''}<button data-dg="${g.id}" aria-label="Delete game">✕</button></div></div>`).join(''):'<div class="hint" style="margin-top:8px">No games yet. Tap + Game.</div>';
+  h+='</div>'});
+ $('fl').innerHTML=h;
+ document.querySelectorAll('.fn').forEach(el=>{el.oninput=()=>{lib.folders.find(f=>f.id==el.dataset.f).n=el.value;save()};el.onchange=drawHome});
+ document.querySelectorAll('.gn').forEach(el=>{el.oninput=()=>{lib.games.find(g=>g.id==el.dataset.g).n=el.value;save()}});
+ document.querySelectorAll('.mv').forEach(el=>el.onchange=()=>{lib.games.find(g=>g.id==el.dataset.g).f=+el.value;save();drawHome()});
+ document.querySelectorAll('[data-sg]').forEach(el=>el.onclick=()=>showDoc(lib.games.find(g=>g.id==el.dataset.sg),'home'));
+ document.querySelectorAll('[data-og]').forEach(el=>el.onclick=()=>openGame(+el.dataset.og));
+ document.querySelectorAll('[data-nf]').forEach(el=>el.onclick=()=>{const f=+el.dataset.nf,g={id:lib.gid++,f,n:'Game '+(lib.games.filter(x=>x.f===f).length+1),d:mk()};lib.games.push(g);curG=g;save();openGame(g.id)});
+ document.querySelectorAll('[data-dg]').forEach(el=>arm(el,()=>{lib.games=lib.games.filter(g=>g.id!=el.dataset.dg);save();drawHome()}));
+ document.querySelectorAll('[data-df]').forEach(el=>arm(el,()=>{if(lib.folders.length<2)return;const id=+el.dataset.df;lib.folders=lib.folders.filter(f=>f.id!==id);lib.games=lib.games.filter(g=>g.f!==id);save();drawHome()},'Delete folder & games?'));
+}
+$('nfn').onkeydown=e=>{if(e.key==='Enter')$('nfb').click()};
+$('nfb').onclick=()=>{const v=$('nfn').value.trim()||'New folder';lib.folders.push({id:lib.fid++,n:v});$('nfn').value='';save();drawHome()};
+$('back').onclick=()=>{save();curG=null;$('gv').hidden=true;$('home').hidden=false;drawHome();window.scrollTo(0,0)};
+drawHome();
